@@ -1,0 +1,29 @@
+default:
+  system: "Vous êtes un expert en analyse de code Python."
+  temperature: 0.7
+  max_tokens: 2000
+
+custom_prompts:
+  code_review:
+    system: "Vous êtes un expert en revue de code Python."
+    user: "Veuillez examiner le code suivant : {code}"
+    temperature: 0.3
+    
+  project_analysis:
+    system: "Vous êtes un expert en architecture logicielle et en analyse de code Python."
+    user: |
+      Analysez le fichier suivant :
+      Chemin: {file_path}
+      
+      Code:
+      ```python
+      {code}
+      ```
+      
+      Fournissez une analyse détaillée incluant :
+      1. Structure et organisation du code
+      2. Bonnes pratiques et patterns utilisés
+      3. Points d'amélioration potentiels
+      4. Problèmes de sécurité éventuels
+      5. Suggestions d'optimisation
+    temperature: 0.5 
