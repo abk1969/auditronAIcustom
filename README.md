@@ -1,22 +1,71 @@
 # AuditronAI
 
-AuditronAI est une application d'analyse de sécurité et d'audit automatisé pour les projets logiciels.
+AuditronAI est un outil d'analyse de sécurité et d'audit de code Python, développé avec l'assistance d'IA pour offrir une analyse approfondie et automatisée.
 
-## Fonctionnalités
+## ✅ Fonctionnalités Actuelles
 
-- Analyse de sécurité automatisée du code source
-- Génération de rapports détaillés
-- Interface utilisateur Streamlit
-- Support pour OpenAI, Azure et Gemini
-- Visualisations et métriques avancées
-- Gestion des configurations de sécurité
-- Historique des analyses
+### Analyse de Sécurité
+- Détection des vulnérabilités avec Bandit
+- Analyse statique du code source
+- Identification des problèmes de sécurité courants
+- Configuration flexible des seuils de sévérité
+
+### Analyse de Qualité
+- Mesure de la complexité cyclomatique avec Radon
+- Détection du code mort avec Vulture
+- Vérification du style avec Flake8
+- Analyse de qualité avec Prospector
+
+### Interface Utilisateur
+- Interface Streamlit intuitive
+- Visualisation des résultats d'analyse
+- Suivi de la progression des analyses
+- Affichage des métriques de base
+
+### Configuration
+- Paramétrage des seuils de sévérité
+- Configuration du niveau de scan
+- Ajustement des timeouts
+- Personnalisation des règles d'analyse
+
+## 🚧 Limitations Actuelles
+
+- Analyse limitée au code Python uniquement
+- Pas d'intégration CI/CD pour le moment
+- Pas d'analyse de dépendances
+- Pas de support multi-langages
+- Interface utilisateur basique
+- Pas de stockage persistant des résultats
+- Pas d'authentification utilisateur
+- Pas d'API REST
+
+## 🤖 Développement Assisté par IA
+
+AuditronAI est développé avec l'assistance d'outils d'IA pour le code, notamment :
+- Génération de code assistée par IA
+- Revue de code automatisée
+- Suggestions d'optimisation
+- Documentation générée
+
+## 🔜 Fonctionnalités Prévues
+
+- Support pour d'autres langages de programmation
+- Intégration CI/CD
+- Analyse des dépendances
+- Base de données pour l'historique des analyses
+- API REST
+- Interface utilisateur avancée
+- Authentification et gestion des utilisateurs
+- Rapports PDF exportables
+- Intégration avec les outils de gestion de projet
 
 ## Installation
 
+### Option 1: Installation Locale
+
 1. Cloner le repository
 ```bash
-git clone https://github.com/abk1969/AuditronAI.git
+git clone https://github.com/votre-username/AuditronAI.git
 cd AuditronAI
 ```
 
@@ -34,39 +83,46 @@ pip install -r requirements.txt
 
 4. Configuration
 - Copier `.env.example` vers `.env`
-- Configurer les variables d'environnement requises dans `.env`
+- Configurer les variables d'environnement requises
 
 5. Lancer l'application
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-## Structure du Projet
+### Option 2: Installation avec Docker
 
-```
-AuditronAI/
-├── app/                    # Interface utilisateur Streamlit
-├── core/                   # Logique métier principale
-├── templates/              # Templates de prompts
-└── tests/                  # Tests unitaires et d'intégration
-```
-
-## Tests
-
+1. Cloner le repository
 ```bash
-pytest tests/
+git clone https://github.com/votre-username/AuditronAI.git
+cd AuditronAI
 ```
 
-## Docker
+2. Configuration
+- Copier `.env.example` vers `.env`
+- Configurer les variables d'environnement requises
 
+3. Construire et lancer avec Docker Compose
 ```bash
 docker-compose up --build
 ```
 
+L'application sera accessible à l'adresse `http://localhost:8501`
+
+## Structure du Projet
+
+```
+AuditronAI/
+├── app/                    # Interface Streamlit
+├── core/                   # Logique d'analyse
+├── templates/              # Templates
+└── tests/                  # Tests
+```
+
 ## Licence
 
-Copyright (c) 2024 abk1969. Tous droits réservés.
+Copyright (c) 2024. Tous droits réservés.
 
-Ce logiciel est fourni sous une licence restrictive. Toute utilisation commerciale est strictement interdite sans l'accord explicite écrit du propriétaire (abk1969).
+## Note Importante
 
-Voir le fichier [LICENSE.md](LICENSE.md) pour plus de détails.
+Cette version d'AuditronAI est en développement actif. Les fonctionnalités listées comme "Prévues" sont en cours de développement et seront ajoutées progressivement. Les retours d'expérience sont les bienvenus pour améliorer l'outil.

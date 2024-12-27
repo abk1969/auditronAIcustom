@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: auditronai
+
+resources:
+- ../../base/namespace.yaml
+- ../../base/backend-deployment.yaml
+- ../../base/backend-service.yaml
+- ../../base/database-statefulset.yaml
+- ../../base/redis-deployment.yaml
+- ../../base/ingress.yaml
+- ../../base/backend-hpa.yaml
+- ../../base/network-policies.yaml
+- ../../base/pod-disruption-budgets.yaml
+- ../../base/rbac.yaml
+- ../../monitoring/prometheus-config.yaml
+- ../../monitoring/grafana-dashboards.yaml
+- ../../backup/velero-backup.yaml
+- ../../backup/backup-cronjob.yaml
+- ../../base/pod-security.yaml
+- ../../logging/elasticsearch.yaml
+- ../../logging/fluentd.yaml
+- ../../istio/gateway.yaml
+- ../../istio/virtual-service.yaml
+- ../../istio/destination-rule.yaml
+- ../../chaos/pod-failure.yaml
+- ../../chaos/network-delay.yaml
+- ../../tracing/jaeger.yaml
+- ../../vault/vault.yaml
+- ../../vault/vault-config.yaml
+
+patches:
+- path: replicas-patch.yaml
+  target:
+    kind: Deployment
+    name: backend
+- path: patches/add-tracing.yaml
+  target:
+    kind: Deployment
+    name: backend
+
+configMapGenerator:
+- name: app-config
+  literals:
+  - ENVIRONMENT=production
+  - API_URL=https://api.auditronai.com
+
+secretGenerator:
+- name: db-credentials
+  files:
+  - secrets/db-credentials.yaml
+- name: vault-tls
+  files:
+  - secrets/vault.crt
+  - secrets/vault.key
+- name: vault-unseal-keys
+  files:
+  - secrets/unseal-keys.json
+
+images:
+- name: auditronai/backend
+  newTag: latest 

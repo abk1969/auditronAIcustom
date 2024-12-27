@@ -1,0 +1,12 @@
+# Configuration du plugin d'analyse de complexité
+name: complexity_analyzer
+enabled: true
+settings:
+  max_complexity: 10
+  ignore_patterns:
+    - "test_*.py"
+    - "*_test.py"
+  thresholds:
+    low: 5
+    medium: 10
+    high: 20 

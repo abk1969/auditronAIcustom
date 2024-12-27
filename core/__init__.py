@@ -1,19 +1,28 @@
-"""
-AuditronAI.core
---------------
-Modules principaux pour l'analyse de code et la sécurité.
-"""
+"""Package core d'AuditronAI."""
+from .security_analyzer import SecurityAnalyzer
+from .logger import setup_logging as setup_logger, logger
+from .history import AnalysisHistory
+from .config import AnalyzerConfig, SecurityThresholds
+from .analyzers import (
+    BaseAnalyzer,
+    BanditAnalyzer,
+    RadonAnalyzer,
+    VultureAnalyzer,
+    ProspectorAnalyzer,
+    ScriptAnalyzer
+)
 
 __all__ = [
     'SecurityAnalyzer',
     'setup_logger',
-    'AnalysisHistory'
+    'logger',
+    'AnalysisHistory',
+    'AnalyzerConfig',
+    'SecurityThresholds',
+    'BaseAnalyzer',
+    'BanditAnalyzer',
+    'RadonAnalyzer',
+    'VultureAnalyzer',
+    'ProspectorAnalyzer',
+    'ScriptAnalyzer'
 ]
-
-from .logger import setup_logger
-from .history import AnalysisHistory
-
-def SecurityAnalyzer(*args, **kwargs):
-    """Classe d'analyse de sécurité."""
-    from .security_analyzer import SecurityAnalyzer as _SecurityAnalyzer
-    return _SecurityAnalyzer(*args, **kwargs)

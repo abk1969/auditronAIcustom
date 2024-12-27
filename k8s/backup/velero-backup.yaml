@@ -1,0 +1,26 @@
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: auditronai-backup
+  namespace: velero
+spec:
+  includedNamespaces:
+  - auditronai
+  storageLocation: default
+  volumeSnapshotLocations:
+  - default
+  hooks:
+    resources:
+    - name: postgres-backup
+      includedNamespaces:
+      - auditronai
+      labelSelector:
+        matchLabels:
+          app: postgres
+      pre:
+        exec:
+          command:
+          - /bin/sh
+          - -c
+          - pg_dump -U $POSTGRES_USER -d $POSTGRES_DB > /backup/db.sql
+  ttl: 720h 

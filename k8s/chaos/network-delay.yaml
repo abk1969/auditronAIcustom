@@ -1,0 +1,20 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-test
+  namespace: auditronai
+spec:
+  action: delay
+  mode: one
+  selector:
+    namespaces:
+      - auditronai
+    labelSelectors:
+      app: backend
+  delay:
+    latency: "100ms"
+    correlation: "100"
+    jitter: "0ms"
+  duration: "30s"
+  scheduler:
+    cron: "@every 15m" 

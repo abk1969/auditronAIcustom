@@ -1,15 +1,14 @@
+"""Module pour le style des rapports d'analyse."""
 import streamlit as st
 from AuditronAI.app.components import show_code_with_highlighting
 from pathlib import Path
 from AuditronAI.app.visualizations import (
     show_code_metrics,
-    create_code_stats_chart,
     show_code_complexity_chart,
     show_quality_indicators,
     show_code_issues,
     show_code_coverage
 )
-from AuditronAI.app.security_report import show_security_report
 
 def show_issues_summary(result: dict):
     """Affiche le résumé des problèmes style SonarQube."""
@@ -239,50 +238,93 @@ def apply_report_style():
     """, unsafe_allow_html=True)
 
 def show_analysis_report(result: dict):
-    """Affiche le rapport d'analyse complet."""
-    # Navigation principale
-    st.markdown("<br>", unsafe_allow_html=True)
+    """
+    Affiche le rapport d'analyse complet.
+    
+    Args:
+        result (dict): Résultats de l'analyse
+    """
+    st.markdown(
+        """
+        <style>
+            .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+                font-size: 1.2rem;
+                padding: 0 1rem;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     tabs = st.tabs([
         "📊 Métriques",
-        "🐛 Sécurité",
-        "💡 Analyse",
-        "📝 Code"
+        "🔒 Sécurité",
+        "🔍 Analyse",
+        "💻 Code"
     ])
     
     with tabs[0]:  # Métriques
-        show_code_metrics(result)
-        show_code_complexity_chart(result)
-        show_quality_indicators(result)
+        if 'metrics' in result and result['metrics']:
+            show_code_metrics(result['metrics'])
+            show_code_complexity_chart(result['metrics'])
+            show_quality_indicators(result['metrics'])
+        else:
+            st.info("Aucune métrique disponible pour ce code")
     
     with tabs[1]:  # Sécurité
-        show_code_issues(result)
-        show_code_coverage(result)
-        show_security_report(result['security'])
+        if 'security' in result and result['security']:
+            if 'issues' in result['security']:
+                st.markdown("### 🔒 Problèmes de sécurité")
+                if result['security']['issues']:
+                    for issue in result['security']['issues']:
+                        with st.expander(f"{issue['severity'].upper()}: {issue['title']}"):
+                            st.markdown(f"""
+                            **Confiance:** {issue['confidence']}  
+                            **Description:** {issue['description']}  
+                            **Ligne:** {issue['line']}  
+                            **Code concerné:**
+                            ```python
+                            {issue['code']}
+                            ```
+                            """)
+                else:
+                    st.success("✅ Aucun problème de sécurité détecté")
+            show_code_coverage(result['security'])
+        else:
+            st.info("Aucune analyse de sécurité disponible pour ce code")
     
     with tabs[2]:  # Analyse
-        st.markdown("""
-            <div style='background: #2E2E2E; padding: 20px; border-radius: 10px; margin: 10px 0;
-                      color: white; line-height: 1.6;'>
-                {}
-            </div>
-        """.format(result['analysis']), unsafe_allow_html=True)
+        if 'analysis' in result and result['analysis']:
+            st.markdown(
+                """
+                <div style='background: #2E2E2E; padding: 20px; border-radius: 10px; margin: 10px 0;
+                          color: white; line-height: 1.6;'>
+                    {}
+                </div>
+                """.format(result['analysis']),
+                unsafe_allow_html=True
+            )
+        else:
+            st.info("Aucune analyse détaillée disponible pour ce code")
     
     with tabs[3]:  # Code
-        st.markdown("""
-            <div style='background: #2E2E2E; border-radius: 10px; margin: 10px 0;
-                      font-family: "JetBrains Mono", monospace;'>
-        """, unsafe_allow_html=True)
-        show_code_with_highlighting(result['code'])
-        st.markdown("</div>", unsafe_allow_html=True)
+        if 'code' in result and result['code']:
+            st.markdown(
+                """
+                <div style='background: #2E2E2E; border-radius: 10px; margin: 10px 0;
+                          font-family: "JetBrains Mono", monospace;'>
+                """,
+                unsafe_allow_html=True
+            )
+            show_code_with_highlighting(result['code'])
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("Aucun code source disponible")
     
     # Actions
     st.markdown("<br>", unsafe_allow_html=True)
     col1, col2 = st.columns([1, 4])
     with col1:
-        st.download_button(
-            "📥 Télécharger le rapport",
-            result['analysis'],
-            file_name=f"analyse_{Path(result['file']).stem}.md",
-            mime="text/markdown",
-            use_container_width=True
-        ) 
+        if st.button("📥 Exporter"):
+            # TODO: Implémenter l'export du rapport
+            st.info("Export en cours d'implémentation")

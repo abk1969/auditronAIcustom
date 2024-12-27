@@ -5,7 +5,9 @@ import time
 import random
 from typing import Callable, List
 
-class UIManager:
+from AuditronAI.core.analysis_progress import ProgressHandler
+
+class UIManager(ProgressHandler):
     """Gère l'interface utilisateur de l'analyse."""
     
     def __init__(self):
@@ -103,4 +105,4 @@ class UIManager:
                     time.sleep(0.1)
                     
             except Exception as e:
-                time.sleep(1) 
+                time.sleep(1)

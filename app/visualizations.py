@@ -1,12 +1,11 @@
-"""
-Visualisations pour l'interface
-"""
+"""Module de visualisation des données."""
 import plotly.graph_objects as go
 import plotly.express as px
+from plotly.subplots import make_subplots
 import streamlit as st
 import pandas as pd
 import seaborn as sns
-from typing import Dict
+from typing import Dict, Any, Optional, List, Union
 
 from AuditronAI.core.logger import logger
 
@@ -70,186 +69,294 @@ def create_code_stats_chart(stats: dict):
     
     return fig
 
-def show_code_metrics(result: dict):
-    """Affiche les métriques du code."""
-    # Ajouter une validation des données d'entrée
-    if not result or 'stats' not in result:
-        st.error("Données de métriques invalides")
+def show_code_metrics(metrics: dict):
+    """
+    Affiche les métriques du code.
+    
+    Args:
+        metrics: Dictionnaire contenant les métriques du code
+    """
+    if not metrics:
+        st.warning("Aucune métrique disponible")
         return
         
-    # Calculer le score dynamiquement
-    score = calculate_score(result['stats'])
-    
-    # Statistiques de base
+    # Afficher les métriques de base
     col1, col2, col3, col4 = st.columns(4)
+    
     with col1:
         st.metric(
             "Lignes de code",
-            result['stats']['Lignes de code'],
+            metrics.get('loc', 0),
             help="Nombre total de lignes de code"
         )
     with col2:
         st.metric(
             "Fonctions",
-            result['stats']['Fonctions'],
+            metrics.get('functions', 0),
             help="Nombre de fonctions définies"
         )
     with col3:
         st.metric(
             "Classes",
-            result['stats']['Classes'],
+            metrics.get('classes', 0),
             help="Nombre de classes définies"
         )
     with col4:
         st.metric(
-            "Score",
-            score,
-            help="Score global de qualité basé sur les métriques"
+            "Complexité",
+            metrics.get('complexity', 0),
+            help="Complexité cyclomatique moyenne"
         )
+        
+    # Créer le graphique des métriques
+    try:
+        df = pd.DataFrame({
+            'Métrique': ['LOC', 'Fonctions', 'Classes', 'Complexité'],
+            'Valeur': [
+                metrics.get('loc', 0),
+                metrics.get('functions', 0),
+                metrics.get('classes', 0),
+                metrics.get('complexity', 0)
+            ]
+        })
+        
+        fig = px.bar(
+            df,
+            x='Métrique',
+            y='Valeur',
+            color='Métrique',
+            color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+        )
+        
+        fig.update_layout(
+            template='plotly_dark',
+            showlegend=False,
+            title="Distribution des métriques",
+            height=300
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du graphique: {str(e)}")
+        st.error("Impossible de créer le graphique des métriques")
 
-    # Graphique principal des statistiques
-    st.plotly_chart(
-        create_code_stats_chart(result['stats']),
-        use_container_width=True
-    )
-
-def calculate_score(stats: dict) -> str:
-    """Calcule un score basé sur les métriques."""
-    # Facteurs de pondération
-    weights = {
-        'Lignes de code': -0.4,  # Pénalise les fichiers trop longs
-        'Fonctions': 0.3,        # Encourage la modularité
-        'Classes': 0.3           # Encourage l'orientation objet
-    }
+def show_code_complexity_chart(metrics: dict):
+    """
+    Affiche un graphique de complexité du code.
     
-    # Calcul du score
-    score = 100
-    for metric, weight in weights.items():
-        if metric in stats:
-            score += stats[metric] * weight
-    
-    # Normalisation entre 0 et 100
-    score = max(0, min(100, score))
-    
-    # Conversion en lettre
-    if score >= 90:
-        return 'A+'
-    elif score >= 80:
-        return 'A'
-    elif score >= 70:
-        return 'B'
-    elif score >= 60:
-        return 'C'
-    else:
-        return 'D'
-
-def show_code_complexity_chart(result: dict):
-    """Affiche un graphique de complexité du code."""
-    if 'complexity' not in result:
-        return
-    
-    fig = go.Figure()
-    
-    # Ajouter les métriques de complexité
-    fig.add_trace(go.Scatterpolar(
-        r=[
-            result['complexity'].get('cyclomatic', 0),
-            result['complexity'].get('cognitive', 0),
-            result['complexity'].get('halstead', 0),
-            result['complexity'].get('maintainability', 0),
-            result['complexity'].get('loc', 0)
-        ],
-        theta=['Cyclomatique', 'Cognitive', 'Halstead', 'Maintenabilité', 'LOC'],
-        fill='toself',
-        name='Complexité'
-    ))
-    
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100]
-            )
-        ),
-        showlegend=False,
-        template='plotly_dark',
-        title={
-            'text': 'Métriques de Complexité',
-            'y':0.95,
-            'x':0.5,
-            'xanchor': 'center',
-            'yanchor': 'top'
-        }
-    )
-    
-    return fig
-
-def show_quality_indicators(result: dict):
-    """Affiche les indicateurs de qualité style SonarQube."""
-    quality_metrics = {
-        'Maintenabilité': {'value': result.get('maintainability', 'A'), 'icon': '🔧'},
-        'Fiabilité': {'value': result.get('reliability', 'A'), 'icon': '🎯'},
-        'Sécurité': {'value': result.get('security', 'A'), 'icon': '🔒'},
-        'Couverture': {'value': f"{result.get('coverage', 0)}%", 'icon': '📊'}
-    }
-    
-    cols = st.columns(len(quality_metrics))
-    for col, (metric, data) in zip(cols, quality_metrics.items()):
-        with col:
-            st.markdown(
-                f"""
-                <div style='background: #1E1E1E; padding: 20px; border-radius: 10px; text-align: center;'>
-                    <div style='font-size: 24px;'>{data['icon']}</div>
-                    <div style='font-size: 20px; color: {"#00C851" if data["value"] in ["A", "A+"] else "#ff4444"};'>
-                        {data['value']}
-                    </div>
-                    <div style='color: #888; font-size: 14px;'>{metric}</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-def show_code_issues(result: dict):
-    """Affiche les problèmes de code style SonarQube."""
-    if 'issues' not in result:
+    Args:
+        metrics: Dictionnaire contenant les métriques de complexité
+    """
+    if not metrics or 'complexity' not in metrics:
         return
         
-    issues = result['issues']
+    try:
+        complexity = metrics['complexity']
+        
+        # Créer une échelle de couleur basée sur la complexité
+        if complexity < 5:
+            color = '#4ECDC4'  # Vert
+        elif complexity < 10:
+            color = '#FFD93D'  # Jaune
+        else:
+            color = '#FF6B6B'  # Rouge
+            
+        # Créer le graphique
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=complexity,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            gauge={
+                'axis': {'range': [0, 20]},
+                'bar': {'color': color},
+                'steps': [
+                    {'range': [0, 5], 'color': '#E8F8F5'},
+                    {'range': [5, 10], 'color': '#FDEBD0'},
+                    {'range': [10, 20], 'color': '#FADBD8'}
+                ]
+            }
+        ))
+        
+        fig.update_layout(
+            title="Complexité du Code",
+            height=300,
+            template='plotly_dark'
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du graphique de complexité: {str(e)}")
+
+def show_quality_indicators(metrics: dict):
+    """
+    Affiche les indicateurs de qualité style SonarQube.
     
-    # Compteurs
-    bugs = len([i for i in issues if i['type'] == 'bug'])
-    vulnerabilities = len([i for i in issues if i['type'] == 'vulnerability'])
-    code_smells = len([i for i in issues if i['type'] == 'code_smell'])
+    Args:
+        metrics: Dictionnaire contenant les métriques de qualité
+    """
+    if not metrics:
+        return
+        
+    quality_score = min(100, max(0, (
+        (metrics.get('loc', 0) > 0) * 25 +
+        (metrics.get('functions', 0) > 0) * 25 +
+        (metrics.get('classes', 0) > 0) * 25 +
+        (metrics.get('complexity', 0) < 10) * 25
+    )))
     
-    # Affichage des compteurs
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-            <div class="issue-box bug">
-                <div class="issue-icon">🐛</div>
-                <div class="issue-count">{}</div>
-                <div class="issue-label">Bugs</div>
+    st.markdown(f"""
+        <div style='text-align: center; margin: 20px 0;'>
+            <div style='display: inline-block; background: {get_quality_color(quality_score)}; 
+                      padding: 10px 20px; border-radius: 15px; color: white;'>
+                Score de Qualité: {quality_score}/100
             </div>
-        """.format(bugs), unsafe_allow_html=True)
+        </div>
+    """, unsafe_allow_html=True)
+
+def get_quality_color(score: float) -> str:
+    """
+    Retourne une couleur basée sur le score de qualité.
     
-    with col2:
-        st.markdown("""
-            <div class="issue-box vulnerability">
-                <div class="issue-icon">🔒</div>
-                <div class="issue-count">{}</div>
-                <div class="issue-label">Vulnérabilités</div>
-            </div>
-        """.format(vulnerabilities), unsafe_allow_html=True)
+    Args:
+        score: Score de qualité entre 0 et 100
+        
+    Returns:
+        Code couleur hexadécimal
+    """
+    if score >= 80:
+        return '#4ECDC4'  # Vert
+    elif score >= 60:
+        return '#FFD93D'  # Jaune
+    else:
+        return '#FF6B6B'  # Rouge
+
+def show_code_issues(security_data: dict):
+    """
+    Affiche les problèmes de code style SonarQube.
     
-    with col3:
-        st.markdown("""
-            <div class="issue-box code-smell">
-                <div class="issue-icon">🔍</div>
-                <div class="issue-count">{}</div>
-                <div class="issue-label">Code Smells</div>
-            </div>
-        """.format(code_smells), unsafe_allow_html=True)
+    Args:
+        security_data: Données de sécurité du code
+    """
+    if not security_data or 'issues' not in security_data:
+        return
+        
+    issues = security_data['issues']
+    
+    if not issues:
+        st.success("✅ Aucun problème détecté")
+        return
+        
+    # Compter les problèmes par sévérité
+    severity_counts = {
+        'critical': 0,
+        'high': 0,
+        'medium': 0,
+        'low': 0
+    }
+    
+    for issue in issues:
+        severity = issue.get('severity', 'low').lower()
+        if severity in severity_counts:
+            severity_counts[severity] += 1
+            
+    # Créer et afficher le graphique de sévérité
+    try:
+        fig = create_severity_chart(severity_counts)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du graphique de sévérité: {str(e)}")
+
+def create_severity_chart(severity_counts: Dict[str, Any]) -> go.Figure:
+    """
+    Crée un graphique de sévérité des problèmes.
+    
+    Args:
+        severity_counts: Dictionnaire contenant le nombre de problèmes par niveau de sévérité
+        
+    Returns:
+        go.Figure: Figure Plotly contenant le graphique
+    """
+    try:
+        # Créer un graphique vide par défaut
+        empty_fig = go.Figure(data=[
+            go.Bar(
+                x=['AUCUN PROBLÈME'],
+                y=[0],
+                marker_color='#808080',
+                text=['0'],
+                textposition='auto',
+            )
+        ])
+        empty_fig.update_layout(
+            title="Aucun problème détecté",
+            showlegend=False,
+            template="plotly_dark",
+            height=300,
+            margin=dict(t=30, l=0, r=0, b=0)
+        )
+
+        # Si pas de données valides, retourner le graphique vide
+        if not severity_counts or not isinstance(severity_counts, dict):
+            logger.warning("Données de sévérité invalides")
+            return empty_fig
+
+        # Calculer le total des problèmes
+        total_issues = sum(severity_counts.values())
+        
+        # Si aucun problème, retourner le graphique vide
+        if total_issues == 0:
+            return empty_fig
+
+        # Créer les listes pour le graphique
+        severities = []
+        counts = []
+        colors = []
+        
+        # Définir les couleurs pour chaque niveau de sévérité
+        color_map = {
+            'critical': '#ff0d0d',
+            'high': '#ff4e11',
+            'medium': '#ff8e15',
+            'low': '#fab733'
+        }
+        
+        # Préparer les données pour le graphique
+        for severity, count in severity_counts.items():
+            if count > 0:
+                severities.append(severity.upper())
+                counts.append(count)
+                colors.append(color_map.get(severity.lower(), '#808080'))
+
+        # Créer le graphique
+        fig = go.Figure(data=[
+            go.Bar(
+                x=severities,
+                y=counts,
+                marker_color=colors,
+                text=counts,
+                textposition='auto',
+            )
+        ])
+
+        # Configurer la mise en page
+        fig.update_layout(
+            title="Répartition des problèmes par sévérité",
+            showlegend=False,
+            template="plotly_dark",
+            height=300,
+            margin=dict(t=30, l=0, r=0, b=0),
+            yaxis_title="Nombre de problèmes",
+            xaxis_title="Niveau de sévérité",
+            bargap=0.15,
+        )
+        
+        return fig
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du graphique : {str(e)}")
+        return empty_fig
 
 def show_code_coverage(result: dict):
     """Affiche la couverture de code."""
@@ -281,74 +388,3 @@ def show_code_coverage(result: dict):
     )
     
     st.plotly_chart(fig, use_container_width=True)
-
-def create_severity_chart(severity_counts: Dict[str, int]) -> go.Figure:
-    """
-    Crée un graphique de sévérité des problèmes.
-    
-    Args:
-        severity_counts: Dictionnaire contenant le nombre de problèmes par niveau de sévérité
-        
-    Returns:
-        go.Figure: Figure Plotly contenant le graphique
-    """
-    # Ajout de logging pour debug
-    logger.debug(f"Données reçues: {severity_counts}")
-    
-    if not severity_counts:
-        # Créer un graphique vide avec une seule barre
-        empty_fig = go.Figure()
-        empty_fig.add_trace(go.Bar(
-            x=['Aucun problème'],
-            y=[0],
-            marker_color='#808080'
-        ))
-        empty_fig.update_layout(
-            title="Aucun problème détecté",
-            showlegend=False,
-            template="plotly_dark",
-            height=300,
-            margin=dict(t=30, l=0, r=0, b=0)
-        )
-        return empty_fig
-
-    # Créer les données pour le graphique
-    x_data = []
-    y_data = []
-    colors = []
-    color_map = {
-        'critical': '#ff0d0d',
-        'high': '#ff4e11',
-        'medium': '#ff8e15',
-        'low': '#fab733'
-    }
-
-    # Préparer les données dans l'ordre souhaité
-    for severity in ['critical', 'high', 'medium', 'low']:
-        if severity in severity_counts:
-            x_data.append(severity.upper())
-            y_data.append(severity_counts[severity])
-            colors.append(color_map[severity])
-
-    # Créer la figure avec une seule trace
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=x_data,
-        y=y_data,
-        marker_color=colors,
-        text=y_data,
-        textposition='auto',
-    ))
-
-    # Configurer la mise en page
-    fig.update_layout(
-        title="Répartition des problèmes par sévérité",
-        showlegend=False,
-        template="plotly_dark",
-        height=300,
-        margin=dict(t=30, l=0, r=0, b=0),
-        yaxis_title="Nombre de problèmes",
-        xaxis_title="Niveau de sévérité"
-    )
-
-    return fig

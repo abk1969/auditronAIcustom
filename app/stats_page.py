@@ -32,13 +32,12 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
     with col1:
         st.metric(
             "Analyses totales",
-            len(history.get_entries()),
+            len(history.get_records()),
             help="Nombre total d'analyses effectuées"
         )
     
     with col2:
-        avg_score = sum(entry['security']['summary']['score'] 
-                       for entry in history.get_entries()) / len(history.get_entries()) if history.get_entries() else 0
+        avg_score = sum(entry.score for entry in history.get_records()) / len(history.get_records()) if history.get_records() else 0
         st.metric(
             "Score moyen",
             f"{avg_score:.1f}/100",
@@ -46,8 +45,7 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
         )
     
     with col3:
-        total_issues = sum(entry['security']['summary']['total_issues'] 
-                          for entry in history.get_entries())
+        total_issues = sum(entry.issues_count for entry in history.get_records())
         st.metric(
             "Problèmes détectés",
             total_issues,
@@ -55,8 +53,7 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
         )
     
     with col4:
-        total_functions = sum(len(entry['security']['radon'].get('functions', []))
-                            for entry in history.get_entries())
+        total_functions = sum(len(entry.details.get('functions', [])) for entry in history.get_records())
         st.metric(
             "Fonctions analysées",
             total_functions,
@@ -64,11 +61,11 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
         )
 
     # Ajouter des tendances et des comparaisons
-    if len(history.get_entries()) > 1:
+    if len(history.get_records()) > 1:
         st.subheader("📊 Analyse des tendances")
         
         # Calculer les tendances
-        scores = [entry['security']['summary']['score'] for entry in history.get_entries()]
+        scores = [entry.score for entry in history.get_records()]
         last_score = scores[-1]
         avg_score = sum(scores) / len(scores)
         trend = "↗️" if last_score > avg_score else "↘️"
@@ -97,8 +94,8 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
     col1, col2 = st.columns(2)
     with col1:
         # Graphique d'évolution des scores
-        scores = [entry['security']['summary']['score'] for entry in history.get_entries()]
-        dates = [entry['timestamp'] for entry in history.get_entries()]
+        scores = [entry.score for entry in history.get_records()]
+        dates = [entry.timestamp for entry in history.get_records()]
         
         fig = go.Figure()
         fig.add_trace(go.Scatter(
@@ -117,8 +114,8 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
     with col2:
         # Graphique des types de problèmes
         severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
-        for entry in history.get_entries():
-            counts = entry['security']['summary']['severity_counts']
+        for entry in history.get_records():
+            counts = entry.details.get('severity_counts', {})
             for severity, count in counts.items():
                 severity_counts[severity] += count
         
@@ -128,7 +125,7 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
         )
 
     # Historique des analyses avec filtres
-    if history.get_entries():
+    if history.get_records():
         st.subheader("📈 Historique des analyses")
         
         # Filtres
@@ -147,17 +144,17 @@ def show_statistics_page(history: AnalysisHistory, usage_stats: UsageStats):
         
         # Filtrer et afficher les entrées
         filtered_entries = [
-            entry for entry in history.get_entries()
-            if entry['security']['summary']['score'] >= min_score
-            and (not show_only_issues or entry['security']['summary']['total_issues'] > 0)
+            entry for entry in history.get_records()
+            if entry.score >= min_score
+            and (not show_only_issues or entry.issues_count > 0)
         ]
         
         for entry in reversed(filtered_entries):
             with st.expander(
-                f"📄 {entry['file']} - Score: {entry['security']['summary']['score']:.1f}/100 "
-                f"({format_timestamp(entry['timestamp'])})"
+                f"📄 {entry.filename} - Score: {entry.score:.1f}/100 "
+                f"({format_timestamp(str(entry.timestamp))})"
             ):
-                show_metrics_tab(entry['security'])
+                show_metrics_tab(entry.details)
     else:
         st.info("Aucune analyse effectuée pour le moment")
 
@@ -389,16 +386,16 @@ def export_stats(history: AnalysisHistory):
     )
     
     if st.sidebar.button("📥 Exporter"):
-        entries = history.get_entries()
+        entries = history.get_records()
         
         if export_format == "Excel":
             df = pd.DataFrame([{
-                'Date': format_timestamp(entry['timestamp']),
-                'Fichier': entry['file'],
-                'Score': entry['security']['summary']['score'],
-                'Problèmes': entry['security']['summary']['total_issues'],
-                'Complexité': entry['security']['radon'].get('average_complexity', 0),
-                'Fonctions': len(entry['security']['radon'].get('functions', [])),
+                'Date': format_timestamp(str(entry.timestamp)),
+                'Fichier': entry.filename,
+                'Score': entry.score,
+                'Problèmes': entry.issues_count,
+                'Complexité': entry.complexity,
+                'Détails': entry.details
             } for entry in entries])
             
             st.sidebar.download_button(

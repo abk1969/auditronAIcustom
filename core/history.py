@@ -1,64 +1,117 @@
-import json
-from pathlib import Path
+"""Module de gestion de l'historique des analyses."""
+from dataclasses import dataclass
 from datetime import datetime
-import os
-from typing import List, Dict, Any
-from .logger import logger
+from typing import Dict, List, Optional
+from pathlib import Path
+import json
+
+@dataclass
+class AnalysisRecord:
+    """Représente une entrée dans l'historique des analyses."""
+    timestamp: datetime
+    filename: str
+    score: float
+    issues_count: int
+    complexity: float
+    details: Dict
 
 class AnalysisHistory:
-    def __init__(self):
-        """Initialise le gestionnaire d'historique."""
-        self.history_file = Path(os.getenv('HISTORY_FILE', 'data/history.json'))
-        self.max_entries = int(os.getenv('HISTORY_MAX_ENTRIES', 1000))
+    """Gère l'historique des analyses de sécurité."""
+    
+    def __init__(self, history_file: Optional[Path] = None):
+        """Initialise l'historique.
+        
+        Args:
+            history_file: Chemin vers le fichier d'historique
+        """
+        self.history_file = history_file or Path.home() / '.auditronai' / 'history.json'
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
+        self.records: List[AnalysisRecord] = []
+        self._load_history()
+
+    def add_record(self, filename: str, score: float, issues_count: int, 
+                  complexity: float, details: Dict):
+        """Ajoute une nouvelle entrée dans l'historique.
         
-        # Charger l'historique existant
-        self.history = self._load_history()
-    
-    def _load_history(self) -> List[Dict[str, Any]]:
+        Args:
+            filename: Nom du fichier analysé
+            score: Score de sécurité
+            issues_count: Nombre de problèmes détectés
+            complexity: Score de complexité
+            details: Détails supplémentaires de l'analyse
+        """
+        record = AnalysisRecord(
+            timestamp=datetime.now(),
+            filename=filename,
+            score=score,
+            issues_count=issues_count,
+            complexity=complexity,
+            details=details
+        )
+        self.records.append(record)
+        self._save_history()
+
+    def get_records(self, limit: Optional[int] = None) -> List[AnalysisRecord]:
+        """Récupère les entrées de l'historique.
+        
+        Args:
+            limit: Nombre maximum d'entrées à retourner
+            
+        Returns:
+            Liste des entrées d'historique
+        """
+        records = sorted(
+            self.records,
+            key=lambda x: x.timestamp,
+            reverse=True
+        )
+        return records[:limit] if limit else records
+
+    def clear_history(self):
+        """Efface tout l'historique."""
+        self.records.clear()
+        self._save_history()
+
+    def _load_history(self):
         """Charge l'historique depuis le fichier."""
-        if not self.history_file.exists():
-            return []
-        
-        try:
-            with open(self.history_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Erreur lors du chargement de l'historique: {e}")
-            return []
-    
+        if self.history_file.exists():
+            try:
+                with open(self.history_file, 'r') as f:
+                    data = json.load(f)
+                    self.records = [
+                        AnalysisRecord(
+                            timestamp=datetime.fromisoformat(r['timestamp']),
+                            filename=r['filename'],
+                            score=r['score'],
+                            issues_count=r['issues_count'],
+                            complexity=r['complexity'],
+                            details=r['details']
+                        )
+                        for r in data
+                    ]
+            except Exception as e:
+                print(f"Erreur lors du chargement de l'historique: {e}")
+                self.records = []
+
     def _save_history(self):
         """Sauvegarde l'historique dans le fichier."""
         try:
-            with open(self.history_file, 'w', encoding='utf-8') as f:
-                json.dump(self.history, f, ensure_ascii=False, indent=2)
+            with open(self.history_file, 'w') as f:
+                records_data = []
+                for r in self.records:
+                    record_dict = {
+                        'timestamp': r.timestamp.isoformat(),
+                        'filename': r.filename,
+                        'score': r.score,
+                        'issues_count': r.issues_count,
+                        'complexity': r.complexity,
+                    }
+                    if hasattr(r.details, 'to_dict'):
+                        record_dict['details'] = r.details.to_dict()
+                    else:
+                        record_dict['details'] = r.details
+                    records_data.append(record_dict)
+                
+                json.dump(records_data, f, indent=2)
         except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde de l'historique: {e}")
-    
-    def add_entry(self, entry: Dict[str, Any]):
-        """Ajoute une nouvelle entrée à l'historique."""
-        # Ajouter timestamp
-        entry['timestamp'] = datetime.now().isoformat()
-        
-        # Ajouter l'entrée
-        self.history.append(entry)
-        
-        # Limiter la taille
-        if len(self.history) > self.max_entries:
-            self.history = self.history[-self.max_entries:]
-        
-        # Sauvegarder
-        self._save_history()
-        logger.info(f"Nouvelle analyse ajoutée à l'historique: {entry['file']}")
-    
-    def get_entries(self, limit: int = None) -> List[Dict[str, Any]]:
-        """Récupère les entrées de l'historique."""
-        if limit:
-            return self.history[-limit:]
-        return self.history
-    
-    def clear_history(self):
-        """Efface tout l'historique."""
-        self.history = []
-        self._save_history()
-        logger.warning("Historique effacé") 
+            print(f"Erreur lors de la sauvegarde de l'historique: {e}")

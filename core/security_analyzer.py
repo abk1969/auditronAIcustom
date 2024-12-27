@@ -1,469 +1,247 @@
-"""
-Module d'analyse de sécurité pour AuditronAI.
+"""Module principal d'analyse de sécurité pour AuditronAI."""
+import asyncio
+from typing import Dict, Any, Optional, List
+from pathlib import Path
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 
-Ce module fournit des outils pour analyser la sécurité du code Python :
-- Analyse de vulnérabilités avec Bandit
-- Analyse de complexité avec Radon
-- Détection de code mort avec Vulture
-- Analyse de qualité avec Prospector
-"""
-# Imports de base
-import os
-import tempfile
-from typing import Dict, Any
-
-# Imports pour le logging
+from .analyzers import (
+    BanditAnalyzer,
+    RadonAnalyzer,
+    VultureAnalyzer,
+    ProspectorAnalyzer,
+    ScriptAnalyzer,
+    TypeScriptAnalyzer
+)
+from .config.analyzer_config import AnalyzerConfig
 from .logger import logger
-
-# Imports pour l'analyse de sécurité
-from bandit.core import manager as bandit_manager
-from bandit.core import config as b_config
-
-# Imports pour l'analyse de code
-import radon.complexity as radon
-import vulture
-from prospector.config import ProspectorConfig
-from prospector.run import Prospector
-
-from .bandit_config import get_bandit_config
+from .analysis_progress import ProgressHandler, DefaultProgressHandler
+from .scoring import SecurityScorer
+from .analysis_results import AnalysisResults, CodeQuality, SecurityIssue
 
 class SecurityAnalyzer:
-    """
-    Classe principale pour l'analyse de sécurité du code.
+    """Classe principale pour l'analyse de sécurité du code."""
     
-    Cette classe combine plusieurs outils d'analyse :
-    - Bandit pour les vulnérabilités de sécurité
-    - Radon pour la complexité cyclomatique
-    - Vulture pour la détection de code mort
-    - Prospector pour la qualité du code
-    """
-    def __init__(self):
-        """Initialise l'analyseur de sécurité."""
-        # Configuration de base
-        self.scan_level = os.getenv('SECURITY_SCAN_LEVEL', 'high')
-        self.enable_deps = os.getenv('ENABLE_DEPENDENCY_CHECK', 'true').lower() == 'true'
-        self.enable_static = os.getenv('ENABLE_STATIC_ANALYSIS', 'true').lower() == 'true'
-        self.timeout = int(os.getenv('SECURITY_TIMEOUT', 30))
-        
-        # Seuils de sévérité
-        self.severity_thresholds = {
-            'critical': int(os.getenv('CRITICAL_SEVERITY_THRESHOLD', 0)),
-            'high': int(os.getenv('HIGH_SEVERITY_THRESHOLD', 2)),
-            'medium': int(os.getenv('MEDIUM_SEVERITY_THRESHOLD', 5)),
-            'low': int(os.getenv('LOW_SEVERITY_THRESHOLD', 10))
-        }
-        
-        # Configuration des analyses
-        self.max_issues = int(os.getenv('SECURITY_MAX_ISSUES', 100))
-        self.min_confidence = float(os.getenv('SECURITY_MIN_CONFIDENCE', 0.8))
-        self.max_complexity = int(os.getenv('MAX_COMPLEXITY', 10))
-        
-        # Configuration Bandit
-        self.bandit_profile = os.getenv('BANDIT_PROFILE', 'default')
-        self.bandit_tests = os.getenv('BANDIT_TESTS', '').split(',')
-        
-        # Créer la configuration Bandit
-        bandit_conf = get_bandit_config(
-            scan_level=self.scan_level,
-            min_confidence=self.min_confidence,
-            max_issues=self.max_issues,
-            profile=self.bandit_profile,
-            tests=self.bandit_tests
-        )
-        
-        # Initialiser la configuration
-        self.bandit_config = b_config.BanditConfig()
-        for key, value in bandit_conf.items():
-            if value is not None:  # Ne pas définir les valeurs None
-                setattr(self.bandit_config, key, value)
-        
-        # Configuration Pylint
-        self.pylint_args = [
-            "--disable=all",
-            "--enable=security",
-            "--exit-zero",
-            "--output-format=json"
-        ]
-
-    def run_bandit_analysis(self, code: str, filename: str) -> Dict:
-        """Exécute l'analyse de sécurité avec Bandit."""
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', encoding='utf-8', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_path = temp_file.name
-
-            try:
-                mgr = bandit_manager.BanditManager(self.bandit_config, 'file')
-                mgr.discover_files([temp_path])
-                mgr.run_tests()
-                
-                return {
-                    'issues': [
-                        {
-                            'severity': issue.severity,
-                            'confidence': issue.confidence,
-                            'test_name': issue.test_id,
-                            'description': issue.text,
-                            'line_number': issue.line_number
-                        }
-                        for issue in mgr.get_issue_list()
-                    ]
-                }
-                
-            except Exception as e:
-                logger.error(f"Erreur lors de l'exécution de Bandit : {str(e)}")
-                return {'error': str(e), 'issues': []}
-            
-        finally:
-            if 'temp_path' in locals():
-                try:
-                    os.unlink(temp_path)
-                except Exception as e:
-                    logger.error(f"Erreur lors de la suppression du fichier temporaire : {str(e)}")
-
-    def run_radon_analysis(self, code: str) -> Dict:
+    def __init__(self, progress_handler: Optional[ProgressHandler] = None, max_workers: int = 4):
         """
-        Analyse la complexité cyclomatique avec Radon.
-
+        Initialise l'analyseur de sécurité.
+        
         Args:
-            code (str): Le code source à analyser
-
-        Returns:
-            Dict: Résultats de l'analyse contenant :
-                - average_complexity: Complexité moyenne
-                - functions: Liste des fonctions avec leur complexité
-                - error: Message d'erreur en cas de problème
+            progress_handler: Gestionnaire de progression optionnel
+            max_workers: Nombre maximum de workers pour l'exécution parallèle
         """
-        try:
-            # Analyse de complexité cyclomatique
-            complexity = radon.cc_visit(code)
-            results = {
-                'average_complexity': sum(cc.complexity for cc in complexity) / len(complexity) if complexity else 0,
-                'functions': [
-                    {
-                        'name': cc.name,
-                        'complexity': cc.complexity,
-                        'line': cc.lineno
-                    } for cc in complexity
-                ]
+        self.config = AnalyzerConfig.from_env()
+        self.progress_handler = progress_handler or DefaultProgressHandler()
+        self.scorer = SecurityScorer(self.config.thresholds)
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        
+        # Initialisation lazy des analyseurs
+        self._analyzers = {}
+
+    def _get_analyzer(self, name: str):
+        """Récupère ou crée un analyseur de manière lazy."""
+        if name not in self._analyzers:
+            analyzer_map = {
+                'bandit': BanditAnalyzer,
+                'radon': RadonAnalyzer,
+                'vulture': VultureAnalyzer,
+                'prospector': ProspectorAnalyzer,
+                'script': ScriptAnalyzer,
+                'typescript': TypeScriptAnalyzer
             }
+            self._analyzers[name] = analyzer_map[name](self.config)
+        return self._analyzers[name]
+
+    async def analyze(self, code: str, filename: str = "code.py") -> AnalysisResults:
+        """Analyse complète du code source de manière asynchrone."""
+        try:
+            self._setup_analysis()
+            results = AnalysisResults(filename)
+            results.set_code(code)
+            
+            if filename.endswith('.ts'):
+                await self._analyze_typescript(code, filename, results)
+            else:
+                # Vérifier si c'est un script
+                is_script = await self._analyze_script(code, filename, results)
+                if is_script:
+                    return results
+                
+                # Analyse Python standard en parallèle
+                await self._analyze_python(code, filename, results)
+            
+            # Calculer le score final
+            self._calculate_score(results)
+            
             return results
-        except Exception as e:
-            logger.error(f"Erreur lors de l'analyse Radon: {str(e)}")
-            return {'error': str(e)}
-
-    def run_vulture_analysis(self, code: str) -> Dict:
-        """
-        Détecte le code mort avec Vulture.
-
-        Args:
-            code (str): Le code source à analyser
-
-        Returns:
-            Dict: Résultats de l'analyse contenant :
-                - unused_vars: Variables non utilisées
-                - unused_funcs: Fonctions non utilisées
-                - error: Message d'erreur en cas de problème
-        """
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', encoding='utf-8', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_path = temp_file.name
-
-            v = vulture.Vulture()
-            v.scavenge([temp_path])
-
-            return {
-                'unused_vars': [
-                    {
-                        'name': item.name,
-                        'type': 'variable',
-                        'line': item.first_lineno,
-                        'size': item.size
-                    }
-                    for item in v.unused_vars
-                ],
-                'unused_funcs': [
-                    {
-                        'name': item.name,
-                        'type': 'function',
-                        'line': item.first_lineno,
-                        'size': item.size
-                    }
-                    for item in v.unused_funcs
-                ]
-            }
-        except Exception as e:
-            logger.error(f"Erreur lors de l'analyse Vulture: {str(e)}")
-            return {'error': str(e)}
-        finally:
-            if 'temp_path' in locals():
-                os.unlink(temp_path)
-
-    def run_prospector_analysis(self, code: str) -> Dict:
-        """
-        Analyse la qualité du code avec Prospector.
-
-        Args:
-            code (str): Le code source à analyser
-
-        Returns:
-            Dict: Résultats de l'analyse contenant :
-                - messages: Liste des problèmes de qualité
-                - error: Message d'erreur en cas de problème
-        """
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', encoding='utf-8', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_path = temp_file.name
-
-            # Configuration Prospector
-            from prospector.config import ProspectorConfig
-            from prospector.run import Prospector
             
-            config = ProspectorConfig()
-            prospector = Prospector(config)
-            prospector.execute()
-
-            return {
-                'messages': [
-                    {
-                        'type': msg.source,
-                        'message': msg.message,
-                        'line': getattr(msg, 'line', 'N/A'),
-                        'character': getattr(msg, 'character', 'N/A')
-                    }
-                    for msg in prospector.get_messages()
-                ]
-            }
         except Exception as e:
-            logger.error(f"Erreur lors de l'analyse Prospector: {str(e)}")
-            return {'error': str(e)}
+            logger.error(f"Erreur lors de l'analyse : {str(e)}")
+            return AnalysisResults.create_default()
+            
         finally:
-            if 'temp_path' in locals():
-                os.unlink(temp_path)
+            await self._cleanup()
 
-    def run_flake8_analysis(self, code: str) -> Dict:
-        """
-        Analyse le code avec flake8.
+    def _setup_analysis(self):
+        """Configure l'interface pour l'analyse."""
+        self.progress_handler.setup_ui()
+        self.progress_handler.update_status("🔍 Préparation de l'analyse...")
+        self.progress_handler.update_progress(10)
+
+    async def _analyze_script(self, code: str, filename: str, results: AnalysisResults) -> bool:
+        """Analyse un fichier script de manière asynchrone."""
+        script_analyzer = self._get_analyzer('script')
+        script_results = await self._run_in_executor(script_analyzer.analyze, code, filename)
         
-        Args:
-            code: Le code source à analyser
-            
-        Returns:
-            Dict: Résultats de l'analyse contenant :
-                - messages: Liste des problèmes trouvés
-                - error: Message d'erreur en cas de problème
-        """
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', encoding='utf-8', delete=False) as temp_file:
-                temp_file.write(code)
-                temp_path = temp_file.name
+        if script_results['is_script']:
+            results.security_issues = script_results['issues']
+            results.code_quality.script_type = script_results['script_type']
+            self.progress_handler.update_progress(100)
+            return True
+        return False
 
-            try:
-                from flake8.api import legacy as flake8
-                
-                style_guide = flake8.get_style_guide(
-                    max_line_length=100,
-                    max_complexity=10,
-                    ignore=['E203', 'W503']
-                )
-                
-                report = style_guide.check_files([temp_path])
-                
-                return {
-                    'messages': [
-                        {
-                            'type': 'style',
-                            'code': error[1],
-                            'message': error[2],
-                            'line': error[0],
-                            'column': error[3]
-                        }
-                        for error in report.get_statistics('')
-                    ]
-                }
-                
-            except Exception as e:
-                logger.error(f"Erreur lors de l'analyse flake8 : {str(e)}")
-                return {'error': str(e), 'messages': []}
-                
-        finally:
-            if 'temp_path' in locals():
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
-
-    def analyze(self, code: str, filename: str = "code.py") -> Dict[str, Any]:
-        """Analyse complète du code source."""
-        from AuditronAI.app.ui_manager import UIManager
-        ui = UIManager()
+    async def _analyze_python(self, code: str, filename: str, results: AnalysisResults) -> None:
+        """Analyse un fichier Python de manière asynchrone."""
         try:
-            # Configuration de l'interface
-            ui.setup_ui()
+            # Analyse avec bandit
+            bandit_analyzer = self._get_analyzer('bandit')
+            bandit_results = await self._run_in_executor(bandit_analyzer.analyze, code, filename)
             
-            # Initialisation sans thread de conseils
-            ui.update_status("🔍 Préparation de l'analyse...")
-            ui.update_progress(10)
+            # Ajouter les problèmes de sécurité
+            for issue in bandit_results:
+                results.add_security_issue(SecurityIssue(
+                    type=issue['test_id'],
+                    severity=issue['issue_severity'],
+                    message=issue['issue_text'],
+                    line=issue.get('line_number', 0),
+                    file=filename,
+                    code=issue.get('code', '')
+                ))
+                
+            self.progress_handler.update_progress(50)
             
-            # Initialiser les résultats
-            results = self._get_default_results()
-            results['file'] = filename
-            
-            try:
-                # Bandit (25%)
-                ui.update_status("🔍 Analyse des vulnérabilités avec Bandit...")
-                bandit_results = self.run_bandit_analysis(code, filename)
-                if isinstance(bandit_results, dict) and not bandit_results.get('error'):
-                    results['security_issues'] = bandit_results.get('issues', [])
-                ui.update_progress(25)
-                
-                # Radon (50%)
-                ui.update_status("📊 Analyse de la complexité avec Radon...")
-                radon_results = self.run_radon_analysis(code)
-                if not radon_results.get('error'):
-                    results['code_quality'].update({
-                        'complexity': radon_results.get('average_complexity', 0),
-                        'functions': radon_results.get('functions', [])
-                    })
-                ui.update_progress(50)
-                
-                # Vulture (75%)
-                ui.update_status("🧹 Détection du code mort avec Vulture...")
-                vulture_results = self.run_vulture_analysis(code)
-                if not vulture_results.get('error'):
-                    results['code_quality']['unused_code'] = {
-                        'variables': vulture_results.get('unused_vars', []),
-                        'functions': vulture_results.get('unused_funcs', [])
-                    }
-                ui.update_progress(75)
-                
-                # Flake8 (85%)
-                ui.update_status("🔍 Analyse du style avec Flake8...")
-                flake8_results = self.run_flake8_analysis(code)
-                if not flake8_results.get('error'):
-                    results['code_quality']['style_issues'] = flake8_results.get('messages', [])
-                ui.update_progress(85)
-                
-                # Prospector (100%)
-                ui.update_status("✨ Analyse de la qualité avec Prospector...")
-                prospector_results = self.run_prospector_analysis(code)
-                if not prospector_results.get('error'):
-                    results['code_quality']['style_issues'].extend(prospector_results.get('messages', []))
-                ui.update_progress(100)
-                
-                # Formater les résultats
-                formatted_results = {
-                    'file': filename,
-                    'explanation': (
-                        "### 🔍 Résultats de l'analyse détaillée\n\n"
-                        "Cette analyse comprend plusieurs aspects :\n\n"
-                        "1. **Sécurité** 🔒\n"
-                        "   - Détection des vulnérabilités avec Bandit\n"
-                        "   - Analyse des problèmes de sécurité courants\n\n"
-                        "2. **Complexité** 📊\n"
-                        "   - Mesure de la complexité cyclomatique\n"
-                        "   - Identification des fonctions complexes\n\n"
-                        "3. **Code mort** 🧹\n"
-                        "   - Détection des variables non utilisées\n"
-                        "   - Identification du code inutilisé\n\n"
-                        "4. **Style** ✨\n"
-                        "   - Vérification des bonnes pratiques\n"
-                        "   - Analyse de la qualité du code\n\n"
-                    ),
-                    'security_issues': results['security_issues'],
-                    'code_quality': results['code_quality'],
-                    'summary': self._calculate_summary(results)
-                }
-                
-                return formatted_results
-                
-            except Exception as e:
-                logger.error(f"Erreur lors de l'analyse : {str(e)}")
-                return self._get_default_results()
-            
-        finally:
-            ui.cleanup()
-    
-    def _get_default_results(self):
-        """Retourne une structure de résultats par défaut en cas d'erreur."""
-        return {
-            'file': 'error.py',
-            'security_issues': [],
-            'code_quality': {
-                'complexity': 0,
-                'functions': [],
-                'unused_code': {'variables': [], 'functions': []},
-                'style_issues': []
-            },
-            'summary': {
-                'severity_counts': {'critical': 0, 'high': 0, 'medium': 0, 'low': 0},
-                'total_issues': 0,
-                'score': 0.0,
-                'details': "Erreur lors de l'analyse"
-            }
-        }
-    
-    def _calculate_summary(self, results: Dict) -> Dict:
-        """Calcule le résumé des résultats."""
+        except Exception as e:
+            logger.error(f"Erreur lors de l'analyse Python : {str(e)}")
+
+    async def _analyze_security(self, code: str, filename: str) -> Dict[str, Any]:
+        """Analyse les vulnérabilités de sécurité."""
+        self.progress_handler.update_status("🔍 Analyse des vulnérabilités avec Bandit...")
+        bandit_analyzer = self._get_analyzer('bandit')
+        results = await self._run_in_executor(bandit_analyzer.analyze, code, filename)
+        self.progress_handler.update_progress(25)
+        return results
+
+    async def _analyze_complexity(self, code: str) -> Dict[str, Any]:
+        """Analyse la complexité du code."""
+        self.progress_handler.update_status("📊 Analyse de la complexité avec Radon...")
+        radon_analyzer = self._get_analyzer('radon')
+        results = await self._run_in_executor(radon_analyzer.analyze, code)
+        self.progress_handler.update_progress(50)
+        return results
+
+    async def _analyze_dead_code(self, code: str) -> Dict[str, Any]:
+        """Détecte le code mort."""
+        self.progress_handler.update_status("🧹 Détection du code mort avec Vulture...")
+        vulture_analyzer = self._get_analyzer('vulture')
+        results = await self._run_in_executor(vulture_analyzer.analyze, code)
+        self.progress_handler.update_progress(75)
+        return results
+
+    async def _analyze_quality(self, code: str) -> Dict[str, Any]:
+        """Analyse la qualité du code."""
+        self.progress_handler.update_status("✨ Analyse de la qualité avec Prospector...")
+        prospector_analyzer = self._get_analyzer('prospector')
+        results = await self._run_in_executor(prospector_analyzer.analyze, code)
+        self.progress_handler.update_progress(100)
+        return results
+
+    def _calculate_score(self, results: AnalysisResults):
+        """Calcule le score final."""
         severity_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
-        
-        # Compter les problèmes par sévérité
-        for issue in results['security_issues']:
+        for issue in results.security_issues:
             severity = issue.get('severity', '').lower()
             if severity in severity_counts:
                 severity_counts[severity] += 1
         
-        # Log pour debug
-        logger.debug(f"Severity counts calculés : {severity_counts}")
+        score_results = self.scorer.calculate_score(
+            severity_counts,
+            results.code_quality.complexity,
+            self.config.max_complexity
+        )
         
-        # Calculer le score en fonction des seuils configurés
-        total_issues = sum(severity_counts.values())
-        score = 100.0
+        # Mettre à jour le résumé avec le score et le total des problèmes
+        results.summary.update(score_results)
+        results.summary['total_issues'] = sum(severity_counts.values())
+
+    async def _analyze_typescript(self, code: str, filename: str, results: AnalysisResults):
+        """Analyse un fichier TypeScript de manière asynchrone."""
+        self.progress_handler.update_status("🔍 Analyse du fichier TypeScript...")
+        typescript_analyzer = self._get_analyzer('typescript')
+        typescript_results = await self._run_in_executor(typescript_analyzer.analyze, code, filename)
         
-        # Pénalités basées sur les seuils
-        penalties = {
-            'critical': 20 if severity_counts['critical'] > self.severity_thresholds['critical'] else 0,
-            'high': 10 if severity_counts['high'] > self.severity_thresholds['high'] else 0,
-            'medium': 5 if severity_counts['medium'] > self.severity_thresholds['medium'] else 0,
-            'low': 1 if severity_counts['low'] > self.severity_thresholds['low'] else 0
-        }
+        if not typescript_results.get('error'):
+            results.security_issues = typescript_results.get('security_issues', [])
+            code_quality = typescript_results.get('code_quality', {})
+            results.code_quality.complexity = code_quality.get('complexity', 0)
+            results.code_quality.functions = code_quality.get('functions', [])
+            results.code_quality.unused_code = code_quality.get('unused_code', {})
         
-        # Appliquer les pénalités
-        for severity, count in severity_counts.items():
-            if count > 0:
-                score -= penalties[severity] * count
+        self.progress_handler.update_progress(100)
+
+    async def _run_in_executor(self, func, *args):
+        """Exécute une fonction bloquante dans un thread pool."""
+        return await asyncio.get_event_loop().run_in_executor(self.executor, func, *args)
+
+    async def _cleanup(self):
+        """Nettoie les ressources de manière asynchrone."""
+        self.progress_handler.cleanup()
+        cleanup_tasks = [
+            self._run_in_executor(analyzer.cleanup)
+            for analyzer in self._analyzers.values()
+        ]
+        if cleanup_tasks:
+            await asyncio.gather(*cleanup_tasks)
+        self.executor.shutdown(wait=False)
+
+    def analyze_file(self, file_path: str) -> AnalysisResults:
+        """
+        Analyse un fichier.
         
-        # Pénalité pour complexité excessive
-        avg_complexity = results['code_quality'].get('complexity', 0)
-        if avg_complexity > self.max_complexity:
-            score -= (avg_complexity - self.max_complexity) * 2
-        
-        return {
-            'severity_counts': severity_counts,
-            'total_issues': total_issues,
-            'score': max(0.0, min(100.0, score)),
-            'details': self._generate_summary_details(severity_counts, avg_complexity)
-        }
-    
-    def _generate_summary_details(self, severity_counts: Dict[str, int], complexity: float) -> str:
-        """Génère les détails du résumé."""
-        details = []
-        
-        # Ajouter les problèmes de sécurité
-        for severity, count in severity_counts.items():
-            if count > 0:
-                threshold = self.severity_thresholds[severity]
-                if count > threshold:
-                    details.append(f"⚠️ {count} problème(s) de sévérité {severity.upper()} (seuil: {threshold})")
-        
-        # Ajouter la complexité
-        if complexity > self.max_complexity:
-            details.append(f"⚠️ Complexité ({complexity:.1f}) supérieure au seuil ({self.max_complexity})")
-        
-        if not details:
-            return "✅ Aucun problème majeur détecté"
-        
-        return "\n".join(details)
-    
+        Args:
+            file_path: Chemin du fichier à analyser
+            
+        Returns:
+            Résultats de l'analyse
+        """
+        try:
+            # Lire le contenu du fichier
+            with open(file_path, 'r', encoding='utf-8') as f:
+                code = f.read()
+                
+            # Créer les résultats
+            results = AnalysisResults(file_path)
+            results.set_code(code)
+            
+            # Analyser avec bandit
+            bandit_results = self._run_bandit(file_path)
+            if bandit_results:
+                for issue in bandit_results:
+                    results.add_security_issue(SecurityIssue(
+                        type=issue['test_id'],
+                        severity=issue['issue_severity'],
+                        message=issue['issue_text'],
+                        line=issue.get('line_number', 0),
+                        file=file_path,
+                        code=issue.get('code', '')
+                    ))
+            
+            return results
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de l'analyse : {str(e)}")
+            return AnalysisResults.create_default()
+
+    def _run_bandit(self, file_path: str) -> List[Dict[str, Any]]:
+        """Exécute l'analyseur Bandit sur un fichier."""
+        bandit_analyzer = self._get_analyzer('bandit')
+        return bandit_analyzer.analyze(file_path)

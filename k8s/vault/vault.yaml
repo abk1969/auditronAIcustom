@@ -1,0 +1,48 @@
+apiVersion: vault.banzaicloud.com/v1alpha1
+kind: Vault
+metadata:
+  name: auditronai-vault
+  namespace: vault
+spec:
+  size: 3
+  image: vault:1.9.2
+  bankVaultsImage: banzaicloud/bank-vaults:latest
+
+  # Configuration Vault
+  config:
+    storage:
+      raft:
+        enabled: true
+    listener:
+      tcp:
+        tls_disable: 0
+        address: "0.0.0.0:8200"
+    seal:
+      gcpckms:
+        project: auditronai-prod
+        region: europe-west1
+        key_ring: vault-keys
+        crypto_key: vault-key
+
+  # Configuration des ressources
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 250m
+    limits:
+      memory: 512Mi
+      cpu: 500m
+
+  # Configuration de l'authentification
+  authDelegator:
+    enabled: true
+
+  serviceMonitor:
+    enabled: true
+
+  # Configuration des règles de sécurité
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    capabilities:
+      add: ["IPC_LOCK"] 

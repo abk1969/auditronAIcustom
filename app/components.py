@@ -1,10 +1,10 @@
 import streamlit as st
 from pathlib import Path
 
-def show_code_editor(default_code: str = "") -> str:
+def show_code_editor(default_code: str = "", language: str = "Python") -> str:
     """Affiche un éditeur de code avec coloration syntaxique."""
     return st.text_area(
-        "Code Python",
+        f"Code {language}",
         value=default_code,
         height=300,
         key="code_editor"
@@ -19,22 +19,42 @@ def show_file_browser():
         st.sidebar.error("❌ Dossier non trouvé!")
         return None
     
-    python_files = list(root_path.rglob("*.py"))
-    if not python_files:
-        st.sidebar.warning("Aucun fichier Python trouvé!")
+    code_files = []
+    for ext in [".py", ".ts", ".sql", ".txt", ".json", ".yaml", ".yml", ".md", ".css", ".html", ".js", ".jsx", ".tsx"]:
+        code_files.extend(list(root_path.rglob(f"*{ext}")))
+    
+    if not code_files:
+        st.sidebar.warning("Aucun fichier de code trouvé!")
         return None
     
     selected = st.sidebar.selectbox(
-        "Fichiers Python",
-        python_files,
+        "Fichiers de code",
+        code_files,
         format_func=lambda x: x.name
     )
     
     return selected
 
-def show_code_with_highlighting(code: str):
+def show_code_with_highlighting(code: str, filename: str = ""):
     """Affiche du code avec coloration syntaxique."""
-    st.code(code, language="python")
+    ext = Path(filename).suffix.lower()
+    lang_map = {
+        '.py': 'python',
+        '.ts': 'typescript',
+        '.sql': 'sql',
+        '.txt': 'text',
+        '.json': 'json',
+        '.yaml': 'yaml',
+        '.yml': 'yaml',
+        '.md': 'markdown',
+        '.css': 'css',
+        '.html': 'html',
+        '.js': 'javascript',
+        '.jsx': 'javascript',
+        '.tsx': 'typescript'
+    }
+    language = lang_map.get(ext, 'text')
+    st.code(code, language=language)
 
 def show_active_service():
     """Affiche le service AI actif."""

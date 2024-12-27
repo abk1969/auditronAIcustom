@@ -1,0 +1,39 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: auditronai-vs
+  namespace: auditronai
+spec:
+  hosts:
+  - "api.auditronai.com"
+  gateways:
+  - auditronai-gateway
+  http:
+  - match:
+    - uri:
+        prefix: "/api/v1"
+    route:
+    - destination:
+        host: backend
+        port:
+          number: 8000
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+    timeout: 5s
+    fault:
+      delay:
+        percentage:
+          value: 0.1
+        fixedDelay: 5s
+    corsPolicy:
+      allowOrigins:
+      - exact: "https://auditronai.com"
+      allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      allowHeaders:
+      - Authorization
+      maxAge: "24h" 

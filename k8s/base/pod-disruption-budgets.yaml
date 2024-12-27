@@ -1,0 +1,35 @@
+# PDB pour le backend
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: auditronai
+spec:
+  minAvailable: "75%"
+  selector:
+    matchLabels:
+      app: backend
+---
+# PDB pour la base de données
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: auditronai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+---
+# PDB pour Redis
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: auditronai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: redis 

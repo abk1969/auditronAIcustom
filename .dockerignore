@@ -1,0 +1,58 @@
+# Version control
+.git
+.gitignore
+.gitattributes
+
+# Environnement
+.env
+.env.*
+*.env
+!.env.example
+
+# Dépendances
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.coverage
+**/htmlcov
+**/.venv
+**/.virtualenv
+
+# Logs et données temporaires
+**/logs
+**/*.log
+**/tmp
+**/temp
+**/.DS_Store
+
+# Documentation
+**/docs
+**/README.md
+**/CHANGELOG.md
+**/LICENSE
+**/*.md
+
+# Tests
+**/tests
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+**/jest.config.js
+**/coverage
+
+# Build et cache
+**/dist
+**/build
+**/.cache
+**/.next
+**/.nuxt
+**/.vscode
+**/.idea
+**/*.sqlite
+
+# Autres
+**/docker-compose*
+**/Dockerfile*
+**/.dockerignore
