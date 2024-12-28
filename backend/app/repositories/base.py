@@ -10,6 +10,7 @@ from sqlalchemy.sql import Select
 from app.models.base import BaseModel
 from app.schemas.base import PaginationParams
 from app.core.monitoring import monitoring
+from app.core.database import get_db
 
 ModelType = TypeVar("ModelType", bound=BaseModel)
 
@@ -23,17 +24,13 @@ class BaseRepository(Generic[ModelType]):
             model: Type du modèle
         """
         self.model = model
+        self._db = next(get_db())
     
     @monitoring.track_db_query()
-    async def create(
-        self,
-        db: AsyncSession,
-        obj_in: Union[Dict[str, Any], ModelType]
-    ) -> ModelType:
+    async def create(self, obj_in: Union[Dict[str, Any], ModelType]) -> ModelType:
         """Crée un nouvel objet.
         
         Args:
-            db: Session de base de données
             obj_in: Données de l'objet
             
         Returns:
@@ -45,23 +42,16 @@ class BaseRepository(Generic[ModelType]):
             create_data = obj_in.dict(exclude_unset=True)
             
         db_obj = self.model(**create_data)
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        self._db.add(db_obj)
+        await self._db.commit()
+        await self._db.refresh(db_obj)
         return db_obj
     
     @monitoring.track_db_query()
-    async def update(
-        self,
-        db: AsyncSession,
-        *,
-        db_obj: ModelType,
-        obj_in: Union[Dict[str, Any], ModelType]
-    ) -> ModelType:
+    async def update(self, *, db_obj: ModelType, obj_in: Union[Dict[str, Any], ModelType]) -> ModelType:
         """Met à jour un objet.
         
         Args:
-            db: Session de base de données
             db_obj: Objet à mettre à jour
             obj_in: Données de mise à jour
             
@@ -77,62 +67,49 @@ class BaseRepository(Generic[ModelType]):
             if hasattr(db_obj, field):
                 setattr(db_obj, field, update_data[field])
                 
-        db.add(db_obj)
-        await db.commit()
-        await db.refresh(db_obj)
+        self._db.add(db_obj)
+        await self._db.commit()
+        await self._db.refresh(db_obj)
         return db_obj
     
     @monitoring.track_db_query()
-    async def delete(
-        self,
-        db: AsyncSession,
-        *,
-        id: UUID,
-        user_id: Optional[UUID] = None
-    ) -> Optional[ModelType]:
+    async def delete(self, *, id: UUID, user_id: Optional[UUID] = None) -> Optional[ModelType]:
         """Supprime un objet.
         
         Args:
-            db: Session de base de données
             id: ID de l'objet
             user_id: ID de l'utilisateur
             
         Returns:
             Objet supprimé
         """
-        obj = await self.get(db, id=id)
+        obj = await self.get(id=id)
         if obj:
             if hasattr(obj, "soft_delete") and user_id:
                 obj.soft_delete(user_id)
-                db.add(obj)
+                self._db.add(obj)
             else:
-                await db.delete(obj)
-            await db.commit()
+                await self._db.delete(obj)
+            await self._db.commit()
         return obj
     
     @monitoring.track_db_query()
-    async def get(
-        self,
-        db: AsyncSession,
-        id: UUID
-    ) -> Optional[ModelType]:
+    async def get(self, id: UUID) -> Optional[ModelType]:
         """Récupère un objet par son ID.
         
         Args:
-            db: Session de base de données
             id: ID de l'objet
             
         Returns:
             Objet trouvé
         """
         query = select(self.model).where(self.model.id == id)
-        result = await db.execute(query)
+        result = await self._db.execute(query)
         return result.scalar_one_or_none()
     
     @monitoring.track_db_query()
     async def get_multi(
         self,
-        db: AsyncSession,
         *,
         skip: int = 0,
         limit: int = 100,
@@ -141,7 +118,6 @@ class BaseRepository(Generic[ModelType]):
         """Récupère plusieurs objets.
         
         Args:
-            db: Session de base de données
             skip: Nombre d'objets à sauter
             limit: Nombre d'objets maximum
             filters: Filtres à appliquer
@@ -157,13 +133,12 @@ class BaseRepository(Generic[ModelType]):
                     query = query.where(getattr(self.model, field) == value)
                     
         query = query.offset(skip).limit(limit)
-        result = await db.execute(query)
+        result = await self._db.execute(query)
         return result.scalars().all()
     
     @monitoring.track_db_query()
     async def get_multi_paginated(
         self,
-        db: AsyncSession,
         *,
         params: PaginationParams,
         filters: Optional[Dict[str, Any]] = None
@@ -171,7 +146,6 @@ class BaseRepository(Generic[ModelType]):
         """Récupère plusieurs objets avec pagination.
         
         Args:
-            db: Session de base de données
             params: Paramètres de pagination
             filters: Filtres à appliquer
             
@@ -196,28 +170,23 @@ class BaseRepository(Generic[ModelType]):
             
         # Compte le nombre total
         count_query = select(func.count()).select_from(query)
-        total = await db.scalar(count_query)
+        total = await self._db.scalar(count_query)
         
         # Applique la pagination
         skip = (params.page - 1) * params.size
         query = query.offset(skip).limit(params.size)
         
         # Exécute la requête
-        result = await db.execute(query)
+        result = await self._db.execute(query)
         items = result.scalars().all()
         
         return items, total
     
     @monitoring.track_db_query()
-    async def exists(
-        self,
-        db: AsyncSession,
-        **kwargs: Any
-    ) -> bool:
+    async def exists(self, **kwargs: Any) -> bool:
         """Vérifie si un objet existe.
         
         Args:
-            db: Session de base de données
             **kwargs: Critères de recherche
             
         Returns:
@@ -228,7 +197,7 @@ class BaseRepository(Generic[ModelType]):
             if hasattr(self.model, field):
                 query = query.where(getattr(self.model, field) == value)
                 
-        result = await db.execute(query)
+        result = await self._db.execute(query)
         return result.first() is not None
     
     def _prepare_query(
@@ -257,4 +226,4 @@ class BaseRepository(Generic[ModelType]):
         if exclude_deleted and hasattr(self.model, "deleted_at"):
             query = query.where(self.model.deleted_at.is_(None))
             
-        return query 
+        return query

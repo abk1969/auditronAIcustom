@@ -11,6 +11,8 @@ from app.core.security.password import get_password_hash
 class User(BaseAuditModel):
     """Modèle utilisateur."""
     
+    __tablename__ = "users"
+    
     # Informations de base
     email = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True, nullable=False)
@@ -93,6 +95,8 @@ class User(BaseAuditModel):
 class Role(BaseAuditModel):
     """Modèle de rôle."""
     
+    __tablename__ = "roles"
+    
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
     permissions = Column(ARRAY(String), nullable=False, default=list)
@@ -111,13 +115,13 @@ user_roles = Table(
     Column(
         "user_id",
         UUID(as_uuid=True),
-        ForeignKey("user.id", ondelete="CASCADE"),
+        ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True
     ),
     Column(
         "role_id",
         UUID(as_uuid=True),
-        ForeignKey("role.id", ondelete="CASCADE"),
+        ForeignKey("roles.id", ondelete="CASCADE"),
         primary_key=True
     )
 ) 

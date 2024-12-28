@@ -1,0 +1,59 @@
+"""Gestionnaires d'événements FastAPI."""
+
+from typing import Callable
+from fastapi import FastAPI
+from app.core.base import Base
+from app.core.database import db
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+def create_start_app_handler(app: FastAPI) -> Callable:
+    """Crée le gestionnaire de démarrage.
+    
+    Args:
+        app: Application FastAPI
+        
+    Returns:
+        Gestionnaire de démarrage
+    """
+    async def start_app() -> None:
+        """Démarre l'application."""
+        try:
+            # Crée les tables
+            Base.metadata.create_all(bind=db.engine)
+            logger.info("Tables créées avec succès")
+        except Exception as e:
+            logger.error(
+                "Erreur lors de la création des tables",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
+    
+    return start_app
+
+def create_stop_app_handler(app: FastAPI) -> Callable:
+    """Crée le gestionnaire d'arrêt.
+    
+    Args:
+        app: Application FastAPI
+        
+    Returns:
+        Gestionnaire d'arrêt
+    """
+    async def stop_app() -> None:
+        """Arrête l'application."""
+        try:
+            # Libère les ressources
+            db.dispose()
+            logger.info("Ressources libérées avec succès")
+        except Exception as e:
+            logger.error(
+                "Erreur lors de la libération des ressources",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
+    
+    return stop_app 

@@ -1,0 +1,97 @@
+groups:
+  - name: auditronai_alerts
+    rules:
+      # Alertes pour le backend
+      - alert: BackendDown
+        expr: up{job="backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend est indisponible"
+          description: "Le service backend est indisponible depuis plus d'une minute"
+
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="backend"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation CPU élevée"
+          description: "Le backend utilise plus de 80% du CPU depuis 5 minutes"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="backend"} / 1024 / 1024 / 1024 * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation mémoire élevée"
+          description: "Le backend utilise plus de 80% de la mémoire depuis 5 minutes"
+
+      # Alertes pour le frontend
+      - alert: FrontendDown
+        expr: up{job="frontend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Frontend est indisponible"
+          description: "Le service frontend est indisponible depuis plus d'une minute"
+
+      # Alertes pour la base de données
+      - alert: DatabaseSlowQueries
+        expr: rate(postgresql_slow_queries_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Requêtes lentes détectées"
+          description: "Plus de 5 requêtes lentes par minute détectées dans la base de données"
+
+      - alert: DatabaseHighConnections
+        expr: postgresql_active_connections > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Nombre élevé de connexions"
+          description: "Plus de 100 connexions actives à la base de données"
+
+      # Alertes pour Redis
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis est indisponible"
+          description: "Le service Redis est indisponible depuis plus d'une minute"
+
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_total_system_memory_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Utilisation mémoire Redis élevée"
+          description: "Redis utilise plus de 80% de sa mémoire allouée"
+
+      # Alertes pour le système
+      - alert: HighDiskUsage
+        expr: 100 - ((node_filesystem_avail_bytes * 100) / node_filesystem_size_bytes) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Espace disque faible"
+          description: "Plus de 85% d'utilisation du disque détectée"
+
+      - alert: InstanceDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance arrêtée"
+          description: "Une instance est arrêtée depuis 5 minutes" 

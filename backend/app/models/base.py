@@ -7,7 +7,7 @@ from sqlalchemy import Column, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declared_attr
 
-from app.core.database import Base
+from app.core.base import Base
 
 class BaseModel(Base):
     """Modèle de base pour tous les modèles."""

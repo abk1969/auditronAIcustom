@@ -1,237 +1,141 @@
-"""Gestionnaire d'événements."""
+"""Gestionnaires d'événements de l'application."""
 
-from typing import Any, Callable, Dict, List, Optional
-from dataclasses import dataclass, field
-from datetime import datetime
 import asyncio
-import json
-from uuid import UUID, uuid4
-import threading
-from queue import Queue
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Callable
 
-from app.core.logging import get_logger
+from fastapi import FastAPI
+from alembic.config import Config
+from alembic import command
 
-logger = get_logger(__name__)
+from app.core.config import settings
+from app.core.database import db
+from app.core.base import Base
 
-@dataclass
-class Event:
-    """Événement du système."""
+logger = logging.getLogger(__name__)
+
+async def run_migrations():
+    """Exécute les migrations de manière asynchrone."""
+    def _run_migrations():
+        try:
+            alembic_cfg = Config("alembic.ini")
+            command.upgrade(alembic_cfg, "head")
+            logger.info("Migrations exécutées avec succès")
+        except Exception as e:
+            logger.error(
+                "Erreur lors de l'exécution des migrations",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
     
-    type: str
-    data: Dict[str, Any]
-    id: UUID = field(default_factory=uuid4)
-    timestamp: datetime = field(default_factory=datetime.now)
-    source: Optional[str] = None
-    correlation_id: Optional[UUID] = None
+    # Exécute les migrations dans un thread séparé
+    with ThreadPoolExecutor() as executor:
+        await asyncio.get_event_loop().run_in_executor(executor, _run_migrations)
 
-class EventBus:
-    """Bus d'événements."""
-    
-    def __init__(self) -> None:
-        """Initialise le bus d'événements."""
-        self._handlers: Dict[str, List[Callable]] = {}
-        self._async_handlers: Dict[str, List[Callable]] = {}
-        self._queue: Queue = Queue()
-        self._running = True
-        self._worker = threading.Thread(target=self._process_queue)
-        self._worker.daemon = True
-        self._worker.start()
+async def initialize_database():
+    """Initialise la base de données."""
+    try:
+        logger.info("Initialisation de la base de données...")
+        await db.init_db()
         
-    def subscribe(
-        self,
-        event_type: str,
-        handler: Callable[[Event], None],
-        is_async: bool = False
-    ) -> None:
-        """Souscrit à un type d'événement.
-        
-        Args:
-            event_type: Type d'événement
-            handler: Gestionnaire d'événement
-            is_async: Si le gestionnaire est asynchrone
-        """
-        if is_async:
-            if event_type not in self._async_handlers:
-                self._async_handlers[event_type] = []
-            self._async_handlers[event_type].append(handler)
+        # Attend que la base de données soit prête
+        for attempt in range(5):  # 5 tentatives maximum
+            if await db.check_health():
+                logger.info("Base de données prête !")
+                break
+            logger.warning(f"La base de données n'est pas prête (tentative {attempt + 1}/5)")
+            await asyncio.sleep(2)
         else:
-            if event_type not in self._handlers:
-                self._handlers[event_type] = []
-            self._handlers[event_type].append(handler)
+            raise RuntimeError("La base de données n'est pas prête après plusieurs tentatives")
             
-    def unsubscribe(
-        self,
-        event_type: str,
-        handler: Callable[[Event], None],
-        is_async: bool = False
-    ) -> None:
-        """Désinscrit d'un type d'événement.
+        # Exécute les migrations
+        logger.info("Exécution des migrations...")
+        await run_migrations()
         
-        Args:
-            event_type: Type d'événement
-            handler: Gestionnaire d'événement
-            is_async: Si le gestionnaire est asynchrone
-        """
-        handlers = (
-            self._async_handlers if is_async else self._handlers
-        ).get(event_type, [])
-        
-        if handler in handlers:
-            handlers.remove(handler)
+        # Crée les tables si elles n'existent pas
+        def create_tables():
+            logger.info("Création des tables...")
+            Base.metadata.create_all(bind=db.engine)
+            logger.info("Tables créées avec succès")
             
-    def publish(self, event: Event) -> None:
-        """Publie un événement.
-        
-        Args:
-            event: Événement à publier
-        """
-        self._queue.put(event)
-        
-    async def publish_async(self, event: Event) -> None:
-        """Publie un événement de manière asynchrone.
-        
-        Args:
-            event: Événement à publier
-        """
-        # Exécute les gestionnaires asynchrones
-        handlers = self._async_handlers.get(event.type, [])
-        await asyncio.gather(
-            *[handler(event) for handler in handlers]
+        with ThreadPoolExecutor() as executor:
+            await asyncio.get_event_loop().run_in_executor(executor, create_tables)
+            
+    except Exception as e:
+        logger.error(
+            "Erreur lors de l'initialisation de la base de données",
+            extra={"error": str(e)},
+            exc_info=True
         )
-        
-        # Met l'événement dans la queue pour les gestionnaires synchrones
-        self._queue.put(event)
-        
-    def _process_queue(self) -> None:
-        """Traite la queue d'événements."""
-        while self._running:
-            try:
-                event = self._queue.get(timeout=1.0)
-                self._handle_event(event)
-                self._queue.task_done()
-            except Exception:
-                continue
-                
-    def _handle_event(self, event: Event) -> None:
-        """Traite un événement.
-        
-        Args:
-            event: Événement à traiter
-        """
-        handlers = self._handlers.get(event.type, [])
-        
-        for handler in handlers:
-            try:
-                handler(event)
-            except Exception as e:
-                logger.error(
-                    f"Erreur lors du traitement de l'événement {event.type}: {e}",
-                    extra={
-                        "event_id": str(event.id),
-                        "event_type": event.type,
-                        "error": str(e)
-                    }
-                )
-                
-    def shutdown(self) -> None:
-        """Arrête le bus d'événements."""
-        self._running = False
-        self._worker.join()
-        
-class EventStore:
-    """Stockage d'événements."""
-    
-    def __init__(self) -> None:
-        """Initialise le stockage d'événements."""
-        self._events: List[Event] = []
-        self._lock = threading.Lock()
-        
-    def add(self, event: Event) -> None:
-        """Ajoute un événement.
-        
-        Args:
-            event: Événement à ajouter
-        """
-        with self._lock:
-            self._events.append(event)
-            
-    def get_by_type(self, event_type: str) -> List[Event]:
-        """Récupère les événements par type.
-        
-        Args:
-            event_type: Type d'événement
-            
-        Returns:
-            Liste des événements
-        """
-        with self._lock:
-            return [e for e in self._events if e.type == event_type]
-            
-    def get_by_correlation_id(self, correlation_id: UUID) -> List[Event]:
-        """Récupère les événements par ID de corrélation.
-        
-        Args:
-            correlation_id: ID de corrélation
-            
-        Returns:
-            Liste des événements
-        """
-        with self._lock:
-            return [
-                e for e in self._events
-                if e.correlation_id == correlation_id
-            ]
-            
-    def get_by_source(self, source: str) -> List[Event]:
-        """Récupère les événements par source.
-        
-        Args:
-            source: Source des événements
-            
-        Returns:
-            Liste des événements
-        """
-        with self._lock:
-            return [e for e in self._events if e.source == source]
-            
-    def get_by_timerange(
-        self,
-        start: datetime,
-        end: datetime
-    ) -> List[Event]:
-        """Récupère les événements par plage de temps.
-        
-        Args:
-            start: Date de début
-            end: Date de fin
-            
-        Returns:
-            Liste des événements
-        """
-        with self._lock:
-            return [
-                e for e in self._events
-                if start <= e.timestamp <= end
-            ]
-            
-    def clear(self) -> None:
-        """Efface tous les événements."""
-        with self._lock:
-            self._events.clear()
+        raise
 
-# Instances globales
-event_bus = EventBus()
-event_store = EventStore()
-
-def handle_event(event_type: str, is_async: bool = False):
-    """Décorateur pour gérer un type d'événement.
+def create_start_app_handler(app: FastAPI) -> Callable:
+    """Crée le gestionnaire de démarrage de l'application.
     
     Args:
-        event_type: Type d'événement
-        is_async: Si le gestionnaire est asynchrone
+        app: Application FastAPI
+        
+    Returns:
+        Fonction de démarrage
     """
-    def decorator(func: Callable):
-        event_bus.subscribe(event_type, func, is_async)
-        return func
-    return decorator 
+    async def start_app() -> None:
+        """Démarre l'application."""
+        try:
+            logger.info("Démarrage de l'application...")
+            
+            # Initialise la base de données
+            await initialize_database()
+            
+            # Crée les dossiers nécessaires
+            for directory in [settings.LOG_DIR, settings.UPLOAD_DIR]:
+                directory.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Dossier créé : {directory}")
+            
+            if settings.PROMETHEUS_MULTIPROC_DIR:
+                settings.PROMETHEUS_MULTIPROC_DIR.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Dossier Prometheus créé : {settings.PROMETHEUS_MULTIPROC_DIR}")
+            
+            logger.info("Application démarrée avec succès")
+            
+        except Exception as e:
+            logger.error(
+                "Erreur lors du démarrage de l'application",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
+
+    return start_app
+
+def create_stop_app_handler(app: FastAPI) -> Callable:
+    """Crée le gestionnaire d'arrêt de l'application.
+    
+    Args:
+        app: Application FastAPI
+        
+    Returns:
+        Fonction d'arrêt
+    """
+    async def stop_app() -> None:
+        """Arrête l'application."""
+        try:
+            logger.info("Arrêt de l'application...")
+            
+            # Libère les ressources de la base de données
+            db.dispose()
+            logger.info("Ressources de la base de données libérées")
+            
+            logger.info("Application arrêtée avec succès")
+            
+        except Exception as e:
+            logger.error(
+                "Erreur lors de l'arrêt de l'application",
+                extra={"error": str(e)},
+                exc_info=True
+            )
+            raise
+    
+    return stop_app

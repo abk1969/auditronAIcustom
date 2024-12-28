@@ -1,81 +1,66 @@
-"""Schémas de validation pour les analyses."""
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, constr, validator, HttpUrl
+"""Schémas Pydantic pour les analyses."""
+
 from datetime import datetime
-from app.models.analysis import AnalysisStatus, AnalysisSeverity
-from enum import Enum
+from typing import Dict, List, Optional, Any
 
-class AnalysisStatus(str, Enum):
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-class CodeUploadRequest(BaseModel):
-    file_content: bytes
-    filename: str
-    language: Optional[str] = None
-
-class GitRepositoryRequest(BaseModel):
-    url: HttpUrl
-    branch: Optional[str] = None
-
-class AnalysisIssue(BaseModel):
-    type: str
-    severity: str
-    message: str
-    line: Optional[int] = None
-    column: Optional[int] = None
-    file: Optional[str] = None
-    code: Optional[str] = None
-    suggestion: Optional[str] = None
-
-class AnalysisSuggestion(BaseModel):
-    type: str
-    message: str
-    code: Optional[str] = None
-    impact: Optional[str] = None
-    effort: Optional[str] = None
+from pydantic import BaseModel, Field
 
 class Analysis(BaseModel):
-    id: str
-    user_id: str
-    repository_url: Optional[str] = None
-    repository_name: str
-    code_snippet: Optional[str] = None
-    language: str
-    status: AnalysisStatus
-    metrics: Dict[str, Any]
-    issues: List[AnalysisIssue]
-    suggestions: List[AnalysisSuggestion]
-    summary: str
-    lines_of_code: int
-    complexity_score: float
-    security_score: float
-    performance_score: float
-    created_at: datetime
-    updated_at: datetime
-
+    """Modèle d'analyse."""
+    
+    id: str = Field(..., description="Identifiant unique de l'analyse")
+    user_id: str = Field(..., description="Identifiant de l'utilisateur")
+    repository_name: str = Field(..., description="Nom du dépôt ou du fichier analysé")
+    language: str = Field(..., description="Langage de programmation détecté")
+    status: str = Field(..., description="Statut de l'analyse")
+    metrics: Dict[str, Any] = Field(default_factory=dict, description="Métriques de l'analyse")
+    issues: List[Dict[str, Any]] = Field(default_factory=list, description="Problèmes détectés")
+    suggestions: List[Dict[str, Any]] = Field(default_factory=list, description="Suggestions d'amélioration")
+    summary: str = Field(..., description="Résumé de l'analyse")
+    lines_of_code: int = Field(..., description="Nombre de lignes de code")
+    complexity_score: float = Field(..., description="Score de complexité")
+    security_score: float = Field(..., description="Score de sécurité")
+    performance_score: float = Field(..., description="Score de performance")
+    created_at: datetime = Field(..., description="Date de création")
+    updated_at: datetime = Field(..., description="Date de mise à jour")
+    
     class Config:
-        orm_mode = True
+        """Configuration du modèle."""
+        
+        from_attributes = True
 
 class AnalysisResponse(BaseModel):
-    success: bool
-    data: Analysis
-    message: Optional[str] = None
+    """Réponse d'analyse."""
+    
+    success: bool = Field(..., description="Statut de la réponse")
+    data: Analysis = Field(..., description="Données de l'analyse")
+    message: str = Field(..., description="Message de la réponse")
 
 class AnalysisListResponse(BaseModel):
-    success: bool
-    data: List[Analysis]
-    message: Optional[str] = None
+    """Réponse de liste d'analyses."""
+    
+    success: bool = Field(..., description="Statut de la réponse")
+    data: List[Analysis] = Field(..., description="Liste des analyses")
+    message: str = Field(..., description="Message de la réponse")
 
 class AnalysisStats(BaseModel):
-    total_scans: int
-    issues_found: int
-    issues_resolved: int
-    average_resolution_time: str
+    """Statistiques d'analyse."""
+    
+    total_scans: int = Field(..., description="Nombre total d'analyses")
+    issues_found: int = Field(..., description="Nombre de problèmes trouvés")
+    issues_resolved: int = Field(..., description="Nombre de problèmes résolus")
+    average_resolution_time: str = Field(..., description="Temps moyen de résolution")
 
 class AnalysisStatsResponse(BaseModel):
-    success: bool
-    data: AnalysisStats
-    message: Optional[str] = None 
+    """Réponse de statistiques d'analyse."""
+    
+    success: bool = Field(..., description="Statut de la réponse")
+    data: AnalysisStats = Field(..., description="Statistiques")
+    message: str = Field(..., description="Message de la réponse")
+
+class GitRepositoryRequest(BaseModel):
+    """Requête d'analyse de dépôt Git."""
+    
+    url: str = Field(..., description="URL du dépôt Git")
+    branch: Optional[str] = Field(None, description="Branche à analyser")
+    commit: Optional[str] = Field(None, description="Commit à analyser") 

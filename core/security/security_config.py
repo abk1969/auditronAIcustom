@@ -1,7 +1,8 @@
 """Configuration de sécurité centralisée pour AuditronAI."""
 
 from typing import Dict, List, Optional
-from pydantic import BaseSettings, SecretStr, validator
+from pydantic import SecretStr, validator
+from pydantic_settings import BaseSettings
 import ssl
 
 class SecuritySettings(BaseSettings):

@@ -1,69 +1,58 @@
-# Build stage
-FROM python:3.10-slim AS builder
+# Stage de build
+FROM python:3.10-slim as builder
 
-# Configuration des variables d'environnement
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    POETRY_VERSION=1.4.2 \
-    POETRY_HOME="/opt/poetry" \
-    POETRY_VIRTUALENVS_IN_PROJECT=true \
-    POETRY_NO_INTERACTION=1
-
-# Installation des dépendances système nécessaires
+# Installation des dépendances système
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential \
-        curl \
-        postgresql-client \
-        libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Installation de Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
-ENV PATH="/opt/poetry/bin:$PATH"
+ENV PATH="/root/.local/bin:$PATH" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_NO_INTERACTION=1
 
+# Configuration du projet
 WORKDIR /app
-
-# Copie des fichiers de dépendances
-COPY pyproject.toml poetry.lock* ./
+COPY pyproject.toml ./
 
 # Installation des dépendances
-RUN poetry install --no-dev --no-root
+RUN poetry install --only main --no-root
 
-# Production stage
-FROM python:3.10-slim AS runner
+# Stage final
+FROM python:3.10-slim as runner
 
-# Configuration des variables d'environnement
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH"
-
-# Installation des dépendances système minimales
+# Installation des dépendances système
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        postgresql-client \
-        libpq-dev && \
-    rm -rf /var/lib/apt/lists/*
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
+# Configuration du projet
 WORKDIR /app
 
-# Copie des dépendances et du code
+# Copie de l'environnement virtuel
 COPY --from=builder /app/.venv ./.venv
-COPY . .
 
-# Création d'un utilisateur non-root
+# Copie du code source et des fichiers de migration
+COPY app app/
+COPY alembic.ini .
+COPY migrations migrations/
+
+# Création de l'utilisateur non-root
 RUN groupadd -r appuser && \
     useradd -r -g appuser -d /app -s /sbin/nologin appuser && \
     chown -R appuser:appuser /app
 
+# Configuration de l'environnement
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app" \
+    PYTHONUNBUFFERED=1
+
+# Passage à l'utilisateur non-root
 USER appuser
 
-# Exposition du port
-EXPOSE 8000
-
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=3s \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Commande de démarrage
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Commande par défaut
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

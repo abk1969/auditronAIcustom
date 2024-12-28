@@ -28,7 +28,12 @@ export interface Analysis {
   status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   metrics: {
     [key: string]: any;
+    complexity?: number;
+    duplications?: number;
+    comment_ratio?: number;
   };
+  quality_score: number;
+  global_score: number;
   issues: Array<{
     type: string;
     severity: string;

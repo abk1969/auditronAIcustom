@@ -1,9 +1,11 @@
 """Modèle d'analyse de code."""
 from sqlalchemy import Column, String, Integer, ForeignKey, Enum, Text, Float
-from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY, UUID
 from sqlalchemy.orm import relationship
 import enum
-from .base import BaseModel
+
+from app.models.base import BaseAuditModel
+from app.models.user import User
 
 class AnalysisStatus(enum.Enum):
     PENDING = "pending"
@@ -17,10 +19,12 @@ class AnalysisSeverity(enum.Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
-class Analysis(BaseModel):
+class Analysis(BaseAuditModel):
+    """Modèle d'analyse de code."""
+    
     __tablename__ = "analyses"
 
-    user_id = Column(ForeignKey("users.id"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     repository_url = Column(String, nullable=True)
     code_snippet = Column(Text, nullable=True)
     language = Column(String, nullable=False)
@@ -39,7 +43,7 @@ class Analysis(BaseModel):
     
     # Relations
     user = relationship("User", backref="analyses")
-    reports = relationship("AnalysisReport", back_populates="analysis")
+    reports = relationship("AnalysisReport", back_populates="analysis", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Analysis {self.id} - {self.status.value}>" 
