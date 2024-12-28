@@ -1,16 +1,49 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: auditronai
+      POSTGRES_PASSWORD: auditronai
+      POSTGRES_DB: auditronai
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auditronai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auditron-network
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - auditron-network
+
   backend:
-    build: 
-      context: ./backend
+    build:
+      context: backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
-    env_file:
-      - .env
-    volumes:
-      - uploads_data:/app/uploads
+    environment:
+      SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://auditronai:auditronai@db/auditronai
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: "true"
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      SECRET_KEY: "your-secret-key-here"
+      POSTGRES_SERVER: "db"
+      POSTGRES_USER: "auditronai"
+      POSTGRES_PASSWORD: "auditronai"
+      POSTGRES_DB: "auditronai"
     depends_on:
       db:
         condition: service_healthy
@@ -18,109 +51,23 @@ services:
         condition: service_healthy
     networks:
       - auditron-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
 
   frontend:
     build:
-      context: ./frontend
+      context: frontend
       dockerfile: Dockerfile
     ports:
       - "3000:80"
     environment:
-      - REACT_APP_API_URL=http://localhost:8000/api
-      - NODE_ENV=production
+      REACT_APP_API_URL: http://localhost:8000/api
     depends_on:
       - backend
     networks:
       - auditron-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    restart: unless-stopped
-
-  db:
-    image: postgres:13-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGRES_DB=${POSTGRES_DB:-auditronai}
-    ports:
-      - "5432:5432"
-    networks:
-      - auditron-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
-
-  redis:
-    image: redis:6-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis}
-    ports:
-      - "6379:6379"
-    networks:
-      - auditron-network
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.25'
-          memory: 128M
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
 
 networks:
   auditron-network:
     driver: bridge
-    name: auditron-network
 
 volumes:
   postgres_data:
-    name: auditron-postgres-data
-  uploads_data:
-    name: auditron-uploads-data
